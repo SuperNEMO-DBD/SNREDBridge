@@ -9,6 +9,7 @@
 
 // Third party:
 // - Bayeux:
+#include <bayeux/datatools/clhep_units.h>
 #include <bayeux/datatools/logger.h>
 #include <bayeux/datatools/io_factory.h>
 #include <bayeux/datatools/things.h>
@@ -22,11 +23,12 @@
 #include <snfee/snfee.h>
 #include <snfee/io/multifile_data_reader.h>
 #include <snfee/data/raw_event_data.h>
+#include <snfee/data/time.h>
 
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data,
                               datatools::things &,
-                              const bool);
+                              const bool, const double);
 
 //----------------------------------------------------------------------
 // MAIN PROGRAM
@@ -41,6 +43,8 @@ int main (int argc, char *argv[])
   std::string output_filename = "";
   size_t data_count = 100000000;
   bool no_waveform = false;
+
+  double unix_start_time = 0;
 
   for (int iarg=1; iarg<argc; ++iarg)
     {
@@ -64,6 +68,9 @@ int main (int argc, char *argv[])
 
           else if ((arg == "-no-wf") || (arg == "--no-waveform"))
             no_waveform = true;
+
+          else if ((arg == "--start-time") || (arg == "-s"))
+	    unix_start_time = std::strtod(argv[++iarg], NULL);
 
           else if (arg=="-h" || arg=="--help")
             {
@@ -89,6 +96,13 @@ int main (int argc, char *argv[])
   if (input_filename.empty())
     {
       std::cerr << "*** ERROR: missing input filename !" << std::endl;
+      return 1;
+    }
+
+  if (unix_start_time == 0)
+    {
+      // call the DB to find run SYNC time
+      std::cerr << "*** ERROR: missing start time (-s/--start-time UNIX.TIME)!" << std::endl;
       return 1;
     }
 
@@ -148,7 +162,7 @@ int main (int argc, char *argv[])
       event_record.set_description("An event record composed by an Event Header (EH) and the Unified Digitized Data (UDD) banks");
 
       // Do the RED to UDD conversion and fill the Event record
-      do_red_to_udd_conversion(red, event_record, no_waveform);
+      do_red_to_udd_conversion(red, event_record, no_waveform, unix_start_time);
 
       dpp::base_module::process_status status = writer.process(event_record);
 
@@ -196,7 +210,7 @@ int main (int argc, char *argv[])
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
                               datatools::things & event_record_,
-                              bool no_wf_)
+                              bool no_wf_, double unix_start_time_)
 {
   // Run number
   int32_t red_run_id   = red_.get_run_id();
@@ -231,25 +245,34 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   // auto & UDD = snedm::addToEvent<snemo::datamodel::unified_digitized_data>(UDD_output_tag, event_record_);
   auto & UDD = event_record_.add<snemo::datamodel::unified_digitized_data>(UDD_output_tag);
 
+  //
+  const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
+  const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
+  const double event_time = unix_start_time_ + reference_time/CLHEP::second;
+
   // Fill Event Header based on RED attributes
   EH.get_id().set_run_number(red_run_id);
   EH.get_id().set_event_number(red_event_id);
   EH.set_generation(snemo::datamodel::event_header::GENERATION_REAL);
 
-  // GO: we have to decide how we handle time and timestamp at Falaise level, commenting for now...
-  // EH.get_timestamp().set_seconds(1268644034);
-  // EH.get_timestamp().set_picoseconds(666);
+  // Set the event timestamp
+  int64_t event_time_sec = std::floor(event_time);
+  int64_t event_time_psec = std::floor(1E9*(event_time-event_time_sec));
+  EH.get_timestamp().set_seconds(event_time_sec);
+  EH.get_timestamp().set_picoseconds(event_time_psec);
 
   // GO: we can add some additional properties to the Event Header
   // EH.get_properties().store("simulation.bundle", "falaise");
   // EH.get_properties().store("simulation.version", "0.1");
   // EH.get_properties().store("author", std::string(getenv("USER")));
 
+  // EH.get_properties().store("trigger_decision", ...);
+
 
   // Copy RED attributes to UDD attributes
   UDD.set_run_id(red_run_id);
   UDD.set_event_id(red_event_id);
-  UDD.set_reference_timestamp(red_.get_reference_time().get_ticks());
+  UDD.set_reference_timestamp(reference_timestamp.get_ticks());
   UDD.set_origin_trigger_ids(red_trigger_ids);
   UDD.set_auxiliaries(red_.get_auxiliaries());
 
