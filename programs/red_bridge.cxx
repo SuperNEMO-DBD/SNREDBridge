@@ -12,6 +12,7 @@
 #include <bayeux/datatools/clhep_units.h>
 #include <bayeux/datatools/logger.h>
 #include <bayeux/datatools/io_factory.h>
+#include <bayeux/datatools/properties.h>
 #include <bayeux/datatools/things.h>
 #include <bayeux/dpp/output_module.h>
 
@@ -25,10 +26,13 @@
 #include <snfee/data/raw_event_data.h>
 #include <snfee/data/time.h>
 
+// global variable
+bool no_waveform = false;
+double unix_start_time = 0;
+snemo::datamodel::timestamp previous_eh_timestamp;
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data,
-                              datatools::things &,
-                              const bool, const double);
+                              datatools::things &);
 
 //----------------------------------------------------------------------
 // MAIN PROGRAM
@@ -42,7 +46,6 @@ int main (int argc, char *argv[])
   std::string input_filename = "";
   std::string output_filename = "";
   size_t data_count = 100000000;
-  bool no_waveform = false;
 
   double unix_start_time = 0;
 
@@ -162,7 +165,7 @@ int main (int argc, char *argv[])
       event_record.set_description("An event record composed by an Event Header (EH) and the Unified Digitized Data (UDD) banks");
 
       // Do the RED to UDD conversion and fill the Event record
-      do_red_to_udd_conversion(red, event_record, no_waveform, unix_start_time);
+      do_red_to_udd_conversion(red, event_record);
 
       dpp::base_module::process_status status = writer.process(event_record);
 
@@ -209,8 +212,7 @@ int main (int argc, char *argv[])
 
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
-                              datatools::things & event_record_,
-                              bool no_wf_, double unix_start_time_)
+                              datatools::things & event_record_)
 {
   // Run number
   int32_t red_run_id   = red_.get_run_id();
@@ -220,6 +222,9 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
 
   // Container of merged TriggerID(s) by event builder
   const std::set<int32_t> & red_trigger_ids = red_.get_origin_trigger_ids();
+
+  // RED Digitized trigger hits
+  const std::vector<snfee::data::trigger_record> red_trigger_hits = red_.get_trigger_records();
 
   // RED Digitized calo hits
   const std::vector<snfee::data::calo_digitized_hit> red_calo_hits = red_.get_calo_hits();
@@ -248,7 +253,7 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   //
   const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
   const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
-  const double event_time = unix_start_time_ + reference_time/CLHEP::second;
+  const double event_time = unix_start_time + reference_time/CLHEP::second;
 
   // Fill Event Header based on RED attributes
   EH.get_id().set_run_number(red_run_id);
@@ -261,13 +266,41 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   EH.get_timestamp().set_seconds(event_time_sec);
   EH.get_timestamp().set_picoseconds(event_time_psec);
 
+  // Compute and store deltat to the previous event
+  const snemo::datamodel::timestamp & eh_timestamp = EH.get_timestamp();
+  double deltat_previous_event = 0;
+  if (previous_eh_timestamp.is_valid()) {
+    deltat_previous_event = eh_timestamp.get_seconds() - previous_eh_timestamp.get_seconds();
+    deltat_previous_event += 1E-9 * (eh_timestamp.get_picoseconds() - previous_eh_timestamp.get_picoseconds());
+  }
+  EH.get_properties().store("deltat_previous_event", deltat_previous_event*CLHEP::second);
+  previous_eh_timestamp = EH.get_timestamp();
+
+  // Store event time width
+  if (red_.get_auxiliaries().has_key("time_width"))
+    EH.get_properties().store_real("time_width", red_.get_auxiliaries().fetch_real("time_width"));
+
+  // Store trigger info
+  datatools::properties::data::vint trigger_id_vint;
+  datatools::properties::data::vint trigger_decision_vint;
+  datatools::properties::data::vint progenitor_trigger_id_vint;
+
+  for (const auto & red_trigger_hit : red_trigger_hits) {
+    trigger_id_vint.push_back(red_trigger_hit.get_trigger_id());
+    trigger_decision_vint.push_back(red_trigger_hit.get_trigger_decision());
+    if (red_trigger_hit.has_progenitor_trigger_id())
+      progenitor_trigger_id_vint.push_back(red_trigger_hit.get_progenitor_trigger_id());
+    else progenitor_trigger_id_vint.push_back(-1);
+  }
+
+  EH.get_properties().store("trigger_id", trigger_id_vint);
+  EH.get_properties().store("trigger_decision", trigger_decision_vint);
+  EH.get_properties().store("progenitor_trigger_id", progenitor_trigger_id_vint);
+
   // GO: we can add some additional properties to the Event Header
   // EH.get_properties().store("simulation.bundle", "falaise");
   // EH.get_properties().store("simulation.version", "0.1");
   // EH.get_properties().store("author", std::string(getenv("USER")));
-
-  // EH.get_properties().store("trigger_decision", ...);
-
 
   // Copy RED attributes to UDD attributes
   UDD.set_run_id(red_run_id);
@@ -286,7 +319,7 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
       udd_calo_hit.set_hit_id(red_calo_hit.get_hit_id());
       udd_calo_hit.set_timestamp(red_calo_hit.get_reference_time().get_ticks());
       std::vector<int16_t> calo_waveform = red_calo_hit.get_waveform();
-      if (!no_wf_) udd_calo_hit.set_waveform(calo_waveform);
+      if (!no_waveform) udd_calo_hit.set_waveform(calo_waveform);
       udd_calo_hit.set_low_threshold_only(red_calo_hit.is_low_threshold_only());
       udd_calo_hit.set_high_threshold(red_calo_hit.is_high_threshold());
       udd_calo_hit.set_fcr(red_calo_hit.get_fcr());
