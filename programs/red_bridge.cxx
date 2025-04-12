@@ -18,6 +18,7 @@
 
 // - Falaise:
 #include <falaise/snemo/datamodels/event_header.h>
+#include <falaise/snemo/datamodels/geomid_utils.h>
 #include <falaise/snemo/datamodels/unified_digitized_data.h>
 
 // - SNFEE:
@@ -28,7 +29,7 @@
 
 // global variable
 bool no_waveform = false;
-double unix_start_time = 0;
+double run_sync_time = 0;
 snemo::datamodel::timestamp previous_eh_timestamp;
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data,
@@ -46,8 +47,6 @@ int main (int argc, char *argv[])
   std::string input_filename = "";
   std::string output_filename = "";
   size_t data_count = 100000000;
-
-  double unix_start_time = 0;
 
   for (int iarg=1; iarg<argc; ++iarg)
     {
@@ -72,8 +71,8 @@ int main (int argc, char *argv[])
           else if ((arg == "-no-wf") || (arg == "--no-waveform"))
             no_waveform = true;
 
-          else if ((arg == "--start-time") || (arg == "-s"))
-	    unix_start_time = std::strtod(argv[++iarg], NULL);
+          else if ((arg == "--sync-time") || (arg == "-s"))
+	    run_sync_time = std::strtod(argv[++iarg], NULL);
 
           else if (arg=="-h" || arg=="--help")
             {
@@ -102,7 +101,7 @@ int main (int argc, char *argv[])
       return 1;
     }
 
-  if (unix_start_time == 0)
+  if (run_sync_time == 0)
     {
       // call the DB to find run SYNC time
       std::cerr << "*** ERROR: missing start time (-s/--start-time UNIX.TIME)!" << std::endl;
@@ -250,10 +249,9 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   // auto & UDD = snedm::addToEvent<snemo::datamodel::unified_digitized_data>(UDD_output_tag, event_record_);
   auto & UDD = event_record_.add<snemo::datamodel::unified_digitized_data>(UDD_output_tag);
 
-  //
   const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
   const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
-  const double event_time = unix_start_time + reference_time/CLHEP::second;
+  const double event_time = run_sync_time + reference_time/CLHEP::second;
 
   // Fill Event Header based on RED attributes
   EH.get_id().set_run_number(red_run_id);
@@ -307,7 +305,7 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   UDD.set_event_id(red_event_id);
   UDD.set_reference_timestamp(reference_timestamp.get_ticks());
   UDD.set_origin_trigger_ids(red_trigger_ids);
-  UDD.set_auxiliaries(red_.get_auxiliaries());
+  // UDD.set_auxiliaries(red_.get_auxiliaries());
 
   // Scan and copy RED calo digitized hit into UDD calo digitized hit:
   for (std::size_t ihit = 0; ihit < red_calo_hits.size(); ihit++)
@@ -337,6 +335,15 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
 
     } // end of for ihit
 
+  // sort calo hit by om num
+  auto & udd_calo_hits = UDD.grab_calorimeter_hits();
+
+  std::sort(udd_calo_hits.begin(), udd_calo_hits.end(),
+	    [](const auto & h1, const auto & h2) {return (snemo::datamodel::om_num(h1->get_geom_id()) < snemo::datamodel::om_num(h2->get_geom_id()));});
+
+  // correct hit id values
+  for (std::size_t ihit = 0; ihit < udd_calo_hits.size(); ihit++)
+    udd_calo_hits[ihit]->set_hit_id(ihit);
 
 
   // Scan and copy RED tracker digitized hit into UDD calo digitized hit:
@@ -411,6 +418,16 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
 	    } // end of iggtime
 
     } // end for ihit
+
+  // sort tracker hit by cell num
+  auto & udd_tracker_hits = UDD.grab_tracker_hits();
+
+  std::sort(udd_tracker_hits.begin(), udd_tracker_hits.end(),
+	    [](const auto & h1, const auto & h2) {return (snemo::datamodel::gg_num(h1->get_geom_id()) < snemo::datamodel::gg_num(h2->get_geom_id()));});
+
+  // correct hit id values
+  for (std::size_t ihit = 0; ihit < udd_tracker_hits.size(); ihit++)
+    udd_tracker_hits[ihit]->set_hit_id(ihit);
 
   // red_.print_tree(std::clog);
   // EH.tree_dump(std::clog, "Event header('EH'): ");
