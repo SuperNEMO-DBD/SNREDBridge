@@ -263,6 +263,9 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   EH.get_timestamp().set_seconds(event_time_sec);
   EH.get_timestamp().set_picoseconds(event_time_psec);
 
+  // Transfer RED properties to EH one
+  EH.set_properties(red_.get_auxiliaries());
+
   // Compute and store deltat to the previous event
   const snemo::datamodel::timestamp & eh_timestamp = EH.get_timestamp();
   double deltat_previous_event = 0;
@@ -273,9 +276,13 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   EH.get_properties().store("deltat_previous_event", deltat_previous_event*CLHEP::second);
   previous_eh_timestamp = EH.get_timestamp();
 
-  // Store event time width
-  if (red_.get_auxiliaries().has_key("time_width"))
-    EH.get_properties().store_real("time_width", red_.get_auxiliaries().fetch_real("time_width"));
+  // // Store event time width
+  // if (red_.get_auxiliaries().has_key("time_width"))
+  //   EH.get_properties().store_real("time_width", red_.get_auxiliaries().fetch_real("time_width"));
+
+  // // Store first hit time
+  // if (red_.get_auxiliaries().has_key("first_hit_time"))
+  //   EH.get_properties().store_real("first_hit_time", red_.get_auxiliaries().fetch_real("first_hit_time"));
 
   // Store trigger info
   datatools::properties::data::vint trigger_id_vint;
