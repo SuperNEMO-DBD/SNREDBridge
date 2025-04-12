@@ -249,18 +249,17 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   // auto & UDD = snedm::addToEvent<snemo::datamodel::unified_digitized_data>(UDD_output_tag, event_record_);
   auto & UDD = event_record_.add<snemo::datamodel::unified_digitized_data>(UDD_output_tag);
 
-  const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
-  const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
-  const double event_time = run_sync_time + reference_time/CLHEP::second;
-
   // Fill Event Header based on RED attributes
   EH.get_id().set_run_number(red_run_id);
   EH.get_id().set_event_number(red_event_id);
   EH.set_generation(snemo::datamodel::event_header::GENERATION_REAL);
 
   // Set the event timestamp
-  int64_t event_time_sec = std::floor(event_time);
-  int64_t event_time_psec = std::floor(1E9*(event_time-event_time_sec));
+  const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
+  const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
+  const double event_time = run_sync_time + reference_time/CLHEP::second;
+  const int64_t event_time_sec = std::floor(event_time);
+  const int64_t event_time_psec = std::floor(1E12*(event_time-event_time_sec));
   EH.get_timestamp().set_seconds(event_time_sec);
   EH.get_timestamp().set_picoseconds(event_time_psec);
 
