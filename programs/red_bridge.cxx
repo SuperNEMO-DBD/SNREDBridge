@@ -27,10 +27,11 @@
 #include <snfee/data/raw_event_data.h>
 #include <snfee/data/time.h>
 
-// global variable
+// global variables
 bool no_waveform = false;
 double run_sync_time = 0;
 snemo::datamodel::timestamp previous_eh_timestamp;
+datatools::logger::priority logging = datatools::logger::PRIO_WARNING;
 
 void do_red_to_udd_conversion(const snfee::data::raw_event_data,
                               datatools::things &);
@@ -41,7 +42,6 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data,
 
 int main (int argc, char *argv[])
 {
-  datatools::logger::priority logging = datatools::logger::PRIO_WARNING;
   int error_code = EXIT_SUCCESS;
   try {
   std::string input_filename = "";
@@ -271,8 +271,12 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   double deltat_previous_event = 0;
   if (previous_eh_timestamp.is_valid()) {
     deltat_previous_event = eh_timestamp.get_seconds() - previous_eh_timestamp.get_seconds();
-    deltat_previous_event += 1E-9 * (eh_timestamp.get_picoseconds() - previous_eh_timestamp.get_picoseconds());
+    deltat_previous_event += 1E-12 * (eh_timestamp.get_picoseconds() - previous_eh_timestamp.get_picoseconds());
   }
+
+  if (deltat_previous_event < 0)
+    DT_LOG_WARNING(logging, "negative deltat (" << deltat_previous_event << " sec) for event #" << red_event_id);
+
   EH.get_properties().store("deltat_previous_event", deltat_previous_event*CLHEP::second);
   previous_eh_timestamp = EH.get_timestamp();
 
