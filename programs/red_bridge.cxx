@@ -33,10 +33,11 @@
 // global variables
 bool no_waveform = false;
 double run_sync_time = 0;
+double run_end_time = 86400*365.24;
 snemo::datamodel::timestamp previous_eh_timestamp;
 datatools::logger::priority logging = datatools::logger::PRIO_WARNING;
 
-void do_red_to_udd_conversion(const snfee::data::raw_event_data,
+bool do_red_to_udd_conversion(const snfee::data::raw_event_data,
                               datatools::things &);
 
 //----------------------------------------------------------------------
@@ -76,6 +77,9 @@ int main (int argc, char *argv[])
 
           else if ((arg == "--sync-time") || (arg == "-s"))
 	    run_sync_time = std::strtod(argv[++iarg], NULL);
+
+          else if ((arg == "--end-time") || (arg == "-e"))
+	    run_end_time = std::strtod(argv[++iarg], NULL);
 
           else if (arg=="-h" || arg=="--help")
             {
@@ -192,17 +196,13 @@ int main (int argc, char *argv[])
       red_source.load(red);
       red_counter++;
 
-      // Declare a ``datatools::things`` event record
-      DT_LOG_DEBUG(logging, "Declare the datatools::things event record");
       datatools::things event_record;
-      std::ostringstream namess;
-      namess << "ER_" << udd_counter;
-      event_record.set_name(namess.str());
-      event_record.set_description("An event record composed by an Event Header (EH) and the Unified Digitized Data (UDD) banks");
 
-      // Do the RED to UDD conversion and fill the Event record
-      do_red_to_udd_conversion(red, event_record);
+      // Do the RED to UDD conversion
+      if (!do_red_to_udd_conversion(red, event_record))
+	break;
 
+      // Write the event record
       dpp::base_module::process_status status = writer.process(event_record);
 
       udd_counter++;
@@ -247,7 +247,7 @@ int main (int argc, char *argv[])
 
 
 
-void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
+bool do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
                               datatools::things & event_record_)
 {
   // Run number
@@ -293,12 +293,15 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
 
   // Set the event timestamp
   const snfee::data::timestamp & reference_timestamp = red_.get_reference_time();
-  const double reference_time = reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock());
-  const double event_time = run_sync_time + reference_time/CLHEP::second;
+  const double reference_time = (reference_timestamp.get_ticks() * snfee::data::clock_period(reference_timestamp.get_clock()))/CLHEP::second;
+  const double event_time = run_sync_time + reference_time;
   const int64_t event_time_sec = std::floor(event_time);
   const int64_t event_time_psec = std::floor(1E12*(event_time-event_time_sec));
   EH.get_timestamp().set_seconds(event_time_sec);
   EH.get_timestamp().set_picoseconds(event_time_psec);
+
+  if (reference_time > run_end_time)
+    return false;
 
   // Transfer RED properties to EH one
   EH.set_properties(red_.get_auxiliaries());
@@ -480,5 +483,5 @@ void do_red_to_udd_conversion(const snfee::data::raw_event_data red_,
   // EH.tree_dump(std::clog, "Event header('EH'): ");
   // UDD.tree_dump(std::clog, "Unified Digitized Data('UDD'): ");
 
-  return;
+  return true;
 }
