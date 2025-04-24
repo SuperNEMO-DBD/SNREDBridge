@@ -12,6 +12,7 @@
 #include <bayeux/datatools/clhep_units.h>
 #include <bayeux/datatools/logger.h>
 #include <bayeux/datatools/io_factory.h>
+#include <bayeux/datatools/multi_properties.h>
 #include <bayeux/datatools/properties.h>
 #include <bayeux/datatools/things.h>
 #include <bayeux/dpp/output_module.h>
@@ -20,9 +21,11 @@
 #include <falaise/snemo/datamodels/event_header.h>
 #include <falaise/snemo/datamodels/geomid_utils.h>
 #include <falaise/snemo/datamodels/unified_digitized_data.h>
+#include <falaise/version.h>
 
 // - SNFEE:
 #include <snfee/snfee.h>
+#include <snfee/snfee_version.h>
 #include <snfee/io/multifile_data_reader.h>
 #include <snfee/data/raw_event_data.h>
 #include <snfee/data/time.h>
@@ -132,9 +135,43 @@ int main (int argc, char *argv[])
   writer.set_preserve_existing_output(false); // Allowed to erase existing output file
   writer.set_single_output_file(output_filename);
 
+  // // Store metadata
+  // datatools::multi_properties & writer_metadata = writer.grab_metadata_store();
+
+  // // DAQ metadata
+  // datatools::properties & daq_metadata = writer_metadata.add_section("daq");
+  // daq_metadata.store("run_profile", "betabeta_v1");
+  // daq_metadata.store("run_sync_time",   run_sync_time); // reference time at TDC=0
+  // daq_metadata.store("run_start_time",  run_start_time); // time when trigger is enabled
+  // daq_metadata.store("run_stop_time",   run_stop_time); // time when trigger is disabled
+  // daq_metadata.store("run_duration",    run_stop_time-run_start_time);
+  // daq_metadata.store("run_comment",     "blablabla");
+  // daq_metadata.store("run_shifter",     "manu");
+  // daq_metadata.store("nb_triggers",     0);
+
+  // // SNFEE metadata
+  // datatools::properties & snfee_metadata = writer_metadata.add_section("snfee");
+  // snfee_metadata.store("version",           snfee::version());
+  // snfee_metadata.store("rtd2red.algo",      "delta-tdc");
+  // snfee_metadata.store("rtd2red.delta_tdc", 10*CLHEP::microsecond);
+  // snfee_metadata.store("rtd2red.algo",           "one-to-one");
+  // snfee_metadata.store("rtd2red.algo",           "softw-trigger");
+  // snfee_metadata.store("rtd2red.nb_rtd_rec",           );
+  // snfee_metadata.store("rtd2red.nb_red_rec",           );
+  // snfee_metadata.store("nb_events",           "softw-trigger");
+
+  // // FALAISE metadata
+  // datatools::properties & falaise_metadata = writer_metadata.add_section("falaise");
+  // falaise_metadata.store("version", falaise::version::get_version());
+  // falaise_metadata.store("run_duration", ); // if cropped ?
+  // falaise_metadata.store("nb_events", );    // if cropped ?
+
+  // //
+  // writer_metadata.tree_dump();
+
+  //
   writer.initialize_simple();
   DT_LOG_DEBUG(logging, "Initialization of the output module is done.");
-
 
   // RED counter
   std::size_t red_counter = 0;
